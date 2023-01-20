@@ -7,10 +7,7 @@ import com.amazonaws.services.lambda.runtime.events.S3Event;
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.PutItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.*;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
@@ -35,6 +32,17 @@ public class BlogsUploadS3EventHandler implements RequestHandler<S3Event, String
     public BlogsUploadS3EventHandler(S3Client s3Client, DynamoDbClient amazonDynamoDB) {
         this.s3Client = s3Client;
         this.ddbClient = amazonDynamoDB;
+
+    }
+    private void deleteFromDynamoDB(String key,LambdaLogger logger){
+        Map<String, AttributeValue> attributesMap = new HashMap<>();
+
+        attributesMap.put("pk", AttributeValue.builder().s("blogs").build());
+        attributesMap.put("sk", AttributeValue.builder().s(key).build());
+        logger.log("Inside delete from dynamodb");
+        logger.log(attributesMap.toString());
+        DeleteItemRequest request=DeleteItemRequest.builder().key(attributesMap).tableName(DYNAMODB_TABLE_NAME).build();
+        ddbClient.deleteItem(request);
 
     }
 
@@ -67,17 +75,25 @@ public class BlogsUploadS3EventHandler implements RequestHandler<S3Event, String
 
         s3Event.getRecords().forEach(record -> {
             S3EventNotification.S3BucketEntity bucketEntity = record.getS3().getBucket();
+            logger.log(record.getEventName());
             String key = record.getS3().getObject().getKey();
-            logger.log(key);
-            HeadObjectRequest headObjectRequest = HeadObjectRequest.builder()
-                    .bucket(bucketEntity.getName())
-                    .key(key)
-                    .build();
-            HeadObjectResponse headObjectResponse = s3Client.headObject(headObjectRequest);
+            if("ObjectCreated:Put".equals(record.getEventName())){
 
-            Map<String, String> metadata = headObjectResponse.metadata();
+                logger.log(key);
+                HeadObjectRequest headObjectRequest = HeadObjectRequest.builder()
+                        .bucket(bucketEntity.getName())
+                        .key(key)
+                        .build();
+                HeadObjectResponse headObjectResponse = s3Client.headObject(headObjectRequest);
 
-            insertIntoDynamoDB(metadata, key, logger);
+                Map<String, String> metadata = headObjectResponse.metadata();
+
+                insertIntoDynamoDB(metadata, key, logger);
+            }else{
+                deleteFromDynamoDB(key,logger);
+            }
+
+
         });
         return "Uploaded Blog";
     }
