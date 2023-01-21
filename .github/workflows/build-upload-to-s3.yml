@@ -1,0 +1,43 @@
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-maven
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Build and Upload to S3
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+    env:
+      JAR_FILE_NAME: ${{ github.event.repository.name }}-1.0-SNAPSHOT.jar
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+            role-to-assume: ${{ secrets.WORKFLOW_S3_ACCESS_ROLE_ARN }}
+            role-session-name: blogs-upload-handler-workflow
+            aws-region: us-east-1
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'corretto'
+          cache: maven
+      - name: Build with Maven
+        run: mvn clean package shade:shade --file pom.xml
+      - name: Copy to S3
+        run: aws s3 cp ./target/${{env.JAR_FILE_NAME}} s3://${{ secrets.LAMBDA_SOURCE_BUCKET }}/${{ github.event.repository.name }}/${{env.JAR_FILE_NAME}} --region ${AWS_REGION}
+
+
